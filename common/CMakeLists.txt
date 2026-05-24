@@ -19,11 +19,10 @@ target_include_directories(rts_common
 
 target_link_libraries(rts_common
     PUBLIC
-        rts_project_options
-        rts_project_warnings
-        EnTT::EnTT
-        flatbuffers::flatbuffers
-        spdlog::spdlog
+        rts_project_options   # Interfejs opcji i warningów przekazywany publicznie dalej
+        EnTT::EnTT            # Silnik logiki 
+        flatbuffers::flatbuffers # Serializacja FlatBuffers 
+        spdlog::spdlog        # Logowanie diagnostyczne 
 )
 
 set_target_properties(rts_common PROPERTIES

@@ -14,18 +14,17 @@ target_include_directories(rts_server
 target_link_libraries(rts_server
     PRIVATE
         rts::common
-        rts_project_options
-        rts_project_warnings
+        rts_project_options   # Propaguje opcje globalne, sanitizery oraz warningi
 
         # Networking
-        Boost::system
-        enet::enet
+        Boost::system         # TCP / sesje i autoryzacja 
+        enet::enet            # UDP / ticki symulacji 
 
         # Database
-        libpqxx::pqxx
+        libpqxx::pqxx         # Asynchroniczny PostgreSQL 
 
         # Observability
-        prometheus-cpp::core
+        prometheus-cpp::core  # Metryki serwera dla Prometheusa
         prometheus-cpp::pull
 )
 

@@ -5,7 +5,7 @@ cmake_minimum_required(VERSION 3.23)
  
 project(rts_engine
     VERSION 0.1.0
-    DESCRIPTION "Real-Time RTS Engine with authoritative server architecture"
+    DESCRIPTION "Real-Time RTS Engine with authoritative server architecture" 
     LANGUAGES CXX
 )
  
@@ -16,7 +16,7 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
  
-# Export compile_commands.json for clang-tidy / IDE integration
+# Export compile_commands.json for clang-tidy / IDE integration [cite: 52]
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
  
 # Default to Release if user did not specify
@@ -43,14 +43,14 @@ include(StaticAnalysis)
 # -----------------------------------------------------------------------------
 #  Options
 # -----------------------------------------------------------------------------
-option(RTS_BUILD_TESTS         "Build unit tests"                ON)
+option(RTS_BUILD_TESTS         "Build unit tests"                ON) 
 option(RTS_BUILD_SERVER        "Build server executable"         ON)
-option(RTS_BUILD_CLIENT        "Build client executable"         ON)
-option(RTS_ENABLE_CLANG_TIDY   "Run clang-tidy during build"     OFF)
-option(RTS_ENABLE_ASAN         "Enable AddressSanitizer"         OFF)
-option(RTS_ENABLE_UBSAN        "Enable UndefinedBehaviorSanitizer" OFF)
-option(RTS_ENABLE_TSAN         "Enable ThreadSanitizer"          OFF)
-option(RTS_WARNINGS_AS_ERRORS  "Treat compiler warnings as errors" OFF)
+option(RTS_BUILD_CLIENT        "Build client executable"         ON) 
+option(RTS_ENABLE_CLANG_TIDY   "Run clang-tidy during build"     OFF) 
+option(RTS_ENABLE_ASAN         "Enable AddressSanitizer"         OFF) 
+option(RTS_ENABLE_UBSAN        "Enable UndefinedBehaviorSanitizer" OFF) 
+option(RTS_ENABLE_TSAN         "Enable ThreadSanitizer"          OFF) 
+option(RTS_WARNINGS_AS_ERRORS  "Treat compiler warnings as errors" OFF) 
  
 # -----------------------------------------------------------------------------
 #  Apply global compile/link interface (warnings, sanitizers, tidy)
@@ -59,26 +59,34 @@ add_library(rts_project_options INTERFACE)
 add_library(rts_project_warnings INTERFACE)
  
 rts_set_project_warnings(rts_project_warnings)
-rts_enable_sanitizers(rts_project_options)
+rts_enable_sanitizers(rts_project_options) 
+ 
+target_link_libraries(rts_project_options INTERFACE rts_project_warnings)
  
 if(RTS_ENABLE_CLANG_TIDY)
-    rts_enable_clang_tidy()
+    rts_enable_clang_tidy() 
 endif()
  
 # -----------------------------------------------------------------------------
-#  Third-party dependencies (resolved by Conan)
+#  Third-party dependencies (resolved by Conan) [cite: 22]
 # -----------------------------------------------------------------------------
-# All find_package() calls go here so each subproject sees them.
-find_package(EnTT        CONFIG REQUIRED)
-find_package(Boost       REQUIRED COMPONENTS system)
-find_package(flatbuffers CONFIG REQUIRED)
-find_package(spdlog      CONFIG REQUIRED)
-find_package(libpqxx     CONFIG REQUIRED)
-find_package(SFML        CONFIG REQUIRED COMPONENTS Graphics Window System Network)
-find_package(imgui       CONFIG REQUIRED)
-find_package(ImGui-SFML  CONFIG REQUIRED)
-find_package(prometheus-cpp CONFIG REQUIRED)
-find_package(enet        CONFIG REQUIRED)
+# Wspólne zale¿noœci rdzenia silnika (widoczne dla wszystkich podprojektów)
+find_package(EnTT        CONFIG REQUIRED) 
+find_package(Boost       REQUIRED COMPONENTS system) 
+find_package(flatbuffers CONFIG REQUIRED) 
+find_package(spdlog      CONFIG REQUIRED) 
+find_package(prometheus-cpp CONFIG REQUIRED) 
+find_package(enet        CONFIG REQUIRED) 
+ 
+if(RTS_BUILD_SERVER)
+    find_package(libpqxx     CONFIG REQUIRED) 
+endif()
+ 
+if(RTS_BUILD_CLIENT)
+    find_package(SFML        CONFIG REQUIRED COMPONENTS Graphics Window System Network) 
+    find_package(imgui       CONFIG REQUIRED)
+    find_package(ImGui-SFML  CONFIG REQUIRED)
+endif()
  
 if(RTS_BUILD_TESTS)
     find_package(Catch2 3 CONFIG REQUIRED)
@@ -96,7 +104,7 @@ if(RTS_BUILD_SERVER)
 endif()
  
 if(RTS_BUILD_CLIENT)
-    add_subdirectory(client)
+    add_subdirectory(client) 
 endif()
  
 if(RTS_BUILD_TESTS)
@@ -114,7 +122,7 @@ message(STATUS "  C++ standard      : ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Build server      : ${RTS_BUILD_SERVER}")
 message(STATUS "  Build client      : ${RTS_BUILD_CLIENT}")
 message(STATUS "  Build tests       : ${RTS_BUILD_TESTS}")
-message(STATUS "  clang-tidy        : ${RTS_ENABLE_CLANG_TIDY}")
+message(STATUS "  clang-tidy        : ${RTS_ENABLE_CLANG_TIDY}") 
 message(STATUS "  ASan / UBSan / TSan : ${RTS_ENABLE_ASAN} / ${RTS_ENABLE_UBSAN} / ${RTS_ENABLE_TSAN}")
 message(STATUS "====================================================")
 message(STATUS "")

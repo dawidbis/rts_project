@@ -14,8 +14,7 @@ target_include_directories(rts_client
 target_link_libraries(rts_client
     PRIVATE
         rts::common
-        rts_project_options
-        rts_project_warnings
+        rts_project_options   # Propaguje opcje globalne, sanitizery oraz warningi
 
         # Rendering / windowing
         SFML::Graphics
