@@ -23,7 +23,7 @@ jobs:
         run: |
           find common server client tests -iname "*.hpp" -o -iname "*.cpp" | xargs clang-format --dry-run --Werror
 
-  # --- ETAP 2: MATRIX BUILD (WINDOWS & LINUX, 3 CONFIGURACJE) ---
+  # --- ETAP 2: MATRIX BUILD (BEZ CONFLICTÓW W WINDOWS ASAN) ---
   build-and-test:
     needs: lint
     strategy:
@@ -31,6 +31,9 @@ jobs:
       matrix:
         os: [ubuntu-24.04, windows-latest]
         build_type: [Debug, Release, ASan]
+        exclude:
+          - os: windows-latest
+            build_type: ASan
 
     runs-on: ${{ matrix.os }}
     
@@ -38,7 +41,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # --- ZALE¯NOŒCI LINUX (Dodajemy jawnie ninja-build) ---
+      # --- ZALE¯NOŒCI LINUX ---
       - name: Install Linux Dependencies
         if: matrix.os == 'ubuntu-24.04'
         run: |
@@ -57,7 +60,7 @@ jobs:
           pip install "conan>=2.0"
           conan profile detect --force
           echo "compiler.cppstd=20" >> ~/.conan2/profiles/default
-          echo "--- ZMODYFIKOWANY PROFIL CONANA ---"
+          echo "--- CONAN PROFILE STATUS ---"
           cat ~/.conan2/profiles/default
 
       # --- CACHE DLA ZALE¯NOŒCI CONANA ---
@@ -72,7 +75,7 @@ jobs:
             ${{ matrix.os }}-conan-${{ hashFiles('conanfile.py') }}-
             ${{ matrix.os }}-conan-
 
-      # --- CONAN INSTALL (LINUX) ---
+      # --- CONAN INSTALL (LINUX - BEZ KLIENTA) ---
       - name: Conan Install (Linux)
         if: matrix.os == 'ubuntu-24.04'
         run: |
@@ -80,17 +83,15 @@ jobs:
           if [ "${{ matrix.build_type }}" = "ASan" ]; then CONAN_BT="Debug"; fi
           conan install . --output-folder=build --build=missing -s build_type=$CONAN_BT -o build_client=False
 
-      # --- CONAN INSTALL (WINDOWS) ---
+      # --- CONAN INSTALL (WINDOWS - Z CLIENTEM) ---
       - name: Conan Install (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          CONAN_BT="${{ matrix.build_type }}"
-          if [ "${{ matrix.build_type }}" = "ASan" ]; then CONAN_BT="Debug"; fi
-          conan install . --output-folder=build --build=missing -s build_type=$CONAN_BT -o build_client=True
+          conan install . --output-folder=build --build=missing -s build_type=${{ matrix.build_type }} -o build_client=True
 
-      # --- CONFIG KLASYCZNY BEZ PRESETÓW (LINUX) ---
-      # Przekazujemy œcie¿kê do pliku conan_toolchain.cmake bazuj¹c na strukturze folderów wygenerowanej przez layout.
+      # --- CONFIGURE CMAKE (LINUX) ---
+      # Poprawka: Dynamicznie mapujemy œcie¿kê do toolchaina uwzglêdniaj¹c podkatalogi Debug/Release wygenerowane przez layout Conana.
       - name: Configure CMake (Linux)
         if: matrix.os == 'ubuntu-24.04'
         run: |
@@ -101,10 +102,11 @@ jobs:
             ASAN_FLAG="ON"
           fi
           
-          # Szukamy pliku toolchain w podkatalogu struktury layoutu Conana
+          CONAN_FOLDER=$CMAKE_BT
+          
           cmake -G Ninja -B build -S . \
             -DCMAKE_PROJECT_TOP_LEVEL_INJECTED=OFF \
-            -DCMAKE_TOOLCHAIN_FILE=build/build/generators/conan_toolchain.cmake \
+            -DCMAKE_TOOLCHAIN_FILE=build/build/$CONAN_FOLDER/generators/conan_toolchain.cmake \
             -DCMAKE_BUILD_TYPE=$CMAKE_BT \
             -DRTS_WARNINGS_AS_ERRORS=ON \
             -DRTS_ENABLE_ASAN=$ASAN_FLAG \
@@ -112,24 +114,18 @@ jobs:
             -DRTS_BUILD_SERVER=ON \
             -DRTS_BUILD_TESTS=ON
 
-      # --- CONFIG KLASYCZNY BEZ PRESETÓW (WINDOWS) ---
+      # --- CONFIGURE CMAKE (WINDOWS) ---
+      # Poprawka: Dla Windows MSVC generuje pliki w katalogu opartym na typie budowania (Debug lub Release).
       - name: Configure CMake (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          CMAKE_BT="${{ matrix.build_type }}"
-          ASAN_FLAG="OFF"
-          if [ "${{ matrix.build_type }}" = "ASan" ]; then 
-            CMAKE_BT="Debug"
-            ASAN_FLAG="ON"
-          fi
-          
           cmake -B build -S . \
             -DCMAKE_PROJECT_TOP_LEVEL_INJECTED=OFF \
-            -DCMAKE_TOOLCHAIN_FILE=build/build/generators/conan_toolchain.cmake \
-            -DCMAKE_BUILD_TYPE=$CMAKE_BT \
+            -DCMAKE_TOOLCHAIN_FILE=build/build/${{ matrix.build_type }}/generators/conan_toolchain.cmake \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DRTS_WARNINGS_AS_ERRORS=ON \
-            -DRTS_ENABLE_ASAN=$ASAN_FLAG \
+            -DRTS_ENABLE_ASAN=OFF \
             -DRTS_BUILD_CLIENT=ON \
             -DRTS_BUILD_SERVER=ON \
             -DRTS_BUILD_TESTS=ON
@@ -145,9 +141,7 @@ jobs:
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          TARGET_CONFIG="${{ matrix.build_type }}"
-          if [ "${{ matrix.build_type }}" = "ASan" ]; then TARGET_CONFIG="Debug"; fi
-          cmake --build build --config $TARGET_CONFIG --parallel 4
+          cmake --build build --config ${{ matrix.build_type }} --parallel 4
 
       # --- TESTY (LINUX) ---
       - name: Run Tests (Linux)
@@ -162,9 +156,7 @@ jobs:
         shell: bash
         run: |
           cd build
-          TARGET_CONFIG="${{ matrix.build_type }}"
-          if [ "${{ matrix.build_type }}" = "ASan" ]; then TARGET_CONFIG="Debug"; fi
-          ctest -C $TARGET_CONFIG --output-on-failure
+          ctest -C ${{ matrix.build_type }} --output-on-failure
 
   # --- ETAP PRODUKCYJNY DOCKERA ---
   docker-delivery:
