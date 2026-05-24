@@ -20,20 +20,19 @@ class RtsEngineConan(ConanFile):
     }
 
     def requirements(self):
-        # 1. Wspólne zale¿noœci rdzenia silnika [cite: 7, 12, 20]
+        # 1. Common core dependencies
         self.requires("entt/3.13.2")
         self.requires("boost/1.85.0")
         self.requires("enet/1.3.17")
         self.requires("flatbuffers/24.3.25")
         self.requires("spdlog/1.14.1")
 
-        # 2. Zale¿noœci warunkowe serwera [cite: 19]
+        # 2. Server-specific dependencies
         if self.options.build_server:
             self.requires("libpqxx/8.0.1")
             self.requires("prometheus-cpp/1.2.4")
 
-        # KRYTYCZNA POPRAWKA: Zale¿noœci graficzne tylko dla klienta 
-        # Dziêki temu na Linux CI w chmurze nie pobieramy i nie kompilujemy SFML/ImGui!
+        # 3. Client-specific dependencies
         if self.options.build_client:
             self.requires("sfml/3.0.2") 
             self.requires("imgui/1.91.8")
@@ -41,8 +40,7 @@ class RtsEngineConan(ConanFile):
 
     def build_requirements(self):
         if self.options.build_tests:
-            # U¿ywamy poprawnej metody dla Conan 2.x (tool_requires lub test_requires)
-            self.test_requires("catch2/3.7.1") [cite: 23]
+            self.test_requires("catch2/3.7.1")
 
     def layout(self):
         cmake_layout(self)
@@ -54,7 +52,6 @@ class RtsEngineConan(ConanFile):
         tc = CMakeToolchain(self)
         tc.user_presets_path = False 
         
-        # Automatyczne mapowanie opcji Conana na opcje Twojego projektu CMake
         tc.cache_variables["RTS_BUILD_SERVER"] = bool(self.options.build_server)
         tc.cache_variables["RTS_BUILD_CLIENT"] = bool(self.options.build_client)
         tc.cache_variables["RTS_BUILD_TESTS"]  = bool(self.options.build_tests)
