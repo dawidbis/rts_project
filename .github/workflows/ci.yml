@@ -51,23 +51,14 @@ jobs:
         with:
           python-version: '3.x'
 
-      # Wykrywamy profil, a nastêpnie ordynarnie dopisujemy 'compiler.cppstd=20' na koniec pliku.
-      # Zastêpuje to jakiekolwiek wadliwe automatyczne wykrywanie standardu przez Conana.
       - name: Install Conan & Enforce C++20
         shell: bash
         run: |
           pip install "conan>=2.0"
           conan profile detect --force
-          
-          if [ "${{ matrix.os }}" = "ubuntu-24.04" ]; then
-            echo "compiler.cppstd=20" >> ~/.conan2/profiles/default
-            echo "--- ZMODYFIKOWANY PROFIL LINUX ---"
-            cat ~/.conan2/profiles/default
-          else
-            echo "compiler.cppstd=20" >> ~/.conan2/profiles/default
-            echo "--- ZMODYFIKOWANY PROFIL WINDOWS ---"
-            cat ~/.conan2/profiles/default
-          fi
+          echo "compiler.cppstd=20" >> ~/.conan2/profiles/default
+          echo "--- ZMODYFIKOWANY PROFIL CONANA ---"
+          cat ~/.conan2/profiles/default
 
       # --- CACHE DLA ZALE¯NOŒCI CONANA ---
       - name: Conan Cache
@@ -98,15 +89,15 @@ jobs:
           if [ "${{ matrix.build_type }}" = "ASan" ]; then CONAN_BT="Debug"; fi
           conan install . --output-folder=build --build=missing -s build_type=$CONAN_BT -o build_client=True
 
-      # --- CONFIG Z PRESETEM (LINUX) ---
+      # --- CONFIG Z DOK£ADNYM PRESETEM (LINUX) ---
       - name: Configure CMake (Linux)
         if: matrix.os == 'ubuntu-24.04'
         run: |
           ASAN_FLAG="OFF"
           if [ "${{ matrix.build_type }}" = "ASan" ]; then ASAN_FLAG="ON"; fi
           
-          PRESET_NAME="conan-debug"
-          if [ "${{ matrix.build_type }}" = "Release" ]; then PRESET_NAME="conan-release"; fi
+          PRESET_NAME="linux-gcc-debug"
+          if [ "${{ matrix.build_type }}" = "Release" ]; then PRESET_NAME="linux-gcc-release"; fi
           
           cmake --preset $PRESET_NAME \
             -DRTS_WARNINGS_AS_ERRORS=ON \
@@ -115,15 +106,22 @@ jobs:
             -DRTS_BUILD_SERVER=ON \
             -DRTS_BUILD_TESTS=ON
 
-      # --- CONFIG Z PRESETEM (WINDOWS) ---
+      # --- CONFIG KLASYCZNY PRZEZ TOOLCHAIN DLA UNIKNIÊCIA PROBLEMÓW Z NAZWAMI (WINDOWS) ---
       - name: Configure CMake (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
+          CMAKE_BT="${{ matrix.build_type }}"
           ASAN_FLAG="OFF"
-          if [ "${{ matrix.build_type }}" = "ASan" ]; then ASAN_FLAG="ON"; fi
+          if [ "${{ matrix.build_type }}" = "ASan" ]; then 
+            CMAKE_BT="Debug"
+            ASAN_FLAG="ON"
+          fi
           
-          cmake --preset conan-default \
+          cmake -B build -S . \
+            -DCMAKE_PROJECT_TOP_LEVEL_INJECTED=OFF \
+            -DCMAKE_TOOLCHAIN_FILE=build/build/generators/conan_toolchain.cmake \
+            -DCMAKE_BUILD_TYPE=$CMAKE_BT \
             -DRTS_WARNINGS_AS_ERRORS=ON \
             -DRTS_ENABLE_ASAN=$ASAN_FLAG \
             -DRTS_BUILD_CLIENT=ON \
@@ -134,18 +132,18 @@ jobs:
       - name: Build Project (Linux)
         if: matrix.os == 'ubuntu-24.04'
         run: |
-          PRESET_NAME="conan-debug"
-          if [ "${{ matrix.build_type }}" = "Release" ]; then PRESET_NAME="conan-release"; fi
+          PRESET_NAME="linux-gcc-debug"
+          if [ "${{ matrix.build_type }}" = "Release" ]; then PRESET_NAME="linux-gcc-release"; fi
           cmake --build --preset $PRESET_NAME --parallel 4
 
-      # --- BUILD PROJEKTU (WINDOWS) ---
+      # --- BUILD PROJEKTU CLASYCZNY (WINDOWS) ---
       - name: Build Project (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
           TARGET_CONFIG="${{ matrix.build_type }}"
           if [ "${{ matrix.build_type }}" = "ASan" ]; then TARGET_CONFIG="Debug"; fi
-          cmake --build --preset conan-default --config $TARGET_CONFIG --parallel 4
+          cmake --build build --config $TARGET_CONFIG --parallel 4
 
       # --- TESTY (LINUX) ---
       - name: Run Tests (Linux)
