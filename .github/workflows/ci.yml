@@ -52,26 +52,22 @@ jobs:
           python-version: '3.x'
 
       - name: Install Conan
-        shell: bash
         run: |
           pip install "conan>=2.0"
           conan profile detect --force
-          
-          # POPRAWKA IN¯YNIERSKA: Poniewa¿ stabilny Conan 2 nie pozwala na ³atw¹ edycjê profili z poziomu CLI,
-          # u¿ywamy skryptu Python do bezpoœredniej modyfikacji pliku tekstowego profilu.
-          # Wymuszamy standard C++20, aby biblioteki takie jak libpqxx nie generowa³y b³êdów.
-          python -c "
-          import os
-          p = os.path.expanduser('~/.conan2/profiles/default')
-          if not os.path.exists(p):
-              p = os.path.expanduser('~/_conan2/profiles/default')
-          with open(p, 'r') as f: text = f.read()
-          text = text.replace('compiler.cppstd=gnu17', 'compiler.cppstd=20')
-          text = text.replace('compiler.cppstd=14', 'compiler.cppstd=20')
-          with open(p, 'w') as f: f.write(text)
-          print('--- ZMODYFIKOWANY PROFIL CONANA ---')
-          print(text)
-          "
+
+      # --- POPRAWKA PROFILU DLA LINUXA (C++20 dla libpqxx) ---
+      - name: Patch Conan Profile (Linux)
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          conan profile patch-setting settings.compiler.cppstd=20 default
+
+      # --- POPRAWKA PROFILU DLA WINDOWSA (C++20 dla libpqxx) ---
+      - name: Patch Conan Profile (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          conan profile patch-setting settings.compiler.cppstd=20 default
 
       # --- CACHE DLA ZALE¯NOŒCI CONANA ---
       - name: Conan Cache
@@ -85,37 +81,116 @@ jobs:
             ${{ matrix.os }}-conan-${{ hashFiles('conanfile.py') }}-
             ${{ matrix.os }}-conan-
 
-      # --- INSTALACJA ZALE¯NOŒCI PRZEZ CONANA ---
-      - name: Conan Install
-        shell: bash
+      # --- CONAN INSTALL (LINUX - BEZ KLIENTA) ---
+      - name: Conan Install (Linux)
+        if: matrix.os == 'ubuntu-24.04'
         run: |
           CONAN_BT="${{ matrix.build_type }}"
-          if [ "${{ matrix.build_type }}" = "ASan" ]; then
-            CONAN_BT="Debug"
-          fi
-          
-          BUILD_CLIENT_FLAG="True"
-          if [ "${{ matrix.os }}" = "ubuntu-24.04" ]; then
-            BUILD_CLIENT_FLAG="False"
-          fi
-          
-          conan install . --output-folder=build --build=missing -s build_type=$CONAN_BT -o build_client=$BUILD_CLIENT_FLAG
+          if [ "${{ matrix.build_type }}" = "ASan" ]; then CONAN_BT="Debug"; fi
+          conan install . --output-folder=build --build=missing -s build_type=$CONAN_BT -o build_client=False
 
-      # --- KONFIGURACJA CMAKE ZA POMOC¥ PRESETÓW ---
-      - name: Configure CMake
-        shell: bash
+      # --- CONAN INSTALL (WINDOWS - Z CLIENTEM) ---
+      - name: Conan Install (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          $conan_bt = "${{ matrix.build_type }}"
+          if ("${{ matrix.build_type }}" -eq "ASan") { $conan_bt = "Debug" }
+          conan install . --output-folder=build --build=missing -s build_type=$conan_bt -o build_client=True
+
+      # --- CONFIG Z PRESETEM (LINUX) ---
+      - name: Configure CMake (Linux)
+        if: matrix.os == 'ubuntu-24.04'
         run: |
           ASAN_FLAG="OFF"
-          if [ "${{ matrix.build_type }}" = "ASan" ]; then
-            ASAN_FLAG="ON"
-          fi
-
-          BUILD_CLIENT_FLAG="ON"
-          if [ "${{ matrix.os }}" = "ubuntu-24.04" ]; then
-            BUILD_CLIENT_FLAG="OFF"
-          fi
+          if [ "${{ matrix.build_type }}" = "ASan" ]; then ASAN_FLAG="ON"; fi
           
-          if [ "${{ matrix.os }}" = "windows-latest" ]; then
-            PRESET_NAME="conan-default"
-          else
-            if
+          PRESET_NAME="conan-debug"
+          if [ "${{ matrix.build_type }}" = "Release" ]; then PRESET_NAME="conan-release"; fi
+          
+          cmake --preset $PRESET_NAME \
+            -DRTS_WARNINGS_AS_ERRORS=ON \
+            -DRTS_ENABLE_ASAN=$ASAN_FLAG \
+            -DRTS_BUILD_CLIENT=OFF \
+            -DRTS_BUILD_SERVER=ON \
+            -DRTS_BUILD_TESTS=ON
+
+      # --- CONFIG Z PRESETEM (WINDOWS) ---
+      - name: Configure CMake (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          $asan_flag = "OFF"
+          if ("${{ matrix.build_type }}" -eq "ASan") { $asan_flag = "ON" }
+          
+          cmake --preset conan-default `
+            -DRTS_WARNINGS_AS_ERRORS=ON `
+            -DRTS_ENABLE_ASAN=$asan_flag `
+            -DRTS_BUILD_CLIENT=ON `
+            -DRTS_BUILD_SERVER=ON `
+            -DRTS_BUILD_TESTS=ON
+
+      # --- BUILD PROJEKTU (LINUX) ---
+      - name: Build Project (Linux)
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          PRESET_NAME="conan-debug"
+          if [ "${{ matrix.build_type }}" = "Release" ]; then PRESET_NAME="conan-release"; fi
+          cmake --build --preset $PRESET_NAME --parallel 4
+
+      # --- BUILD PROJEKTU (WINDOWS) ---
+      - name: Build Project (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          $target_config = "${{ matrix.build_type }}"
+          if ("${{ matrix.build_type }}" -eq "ASan") { $target_config = "Debug" }
+          cmake --build --preset conan-default --config $target_config --parallel 4
+
+      # --- TESTY (LINUX) ---
+      - name: Run Tests (Linux)
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          cd build
+          ctest --output-on-failure
+
+      # --- TESTY (WINDOWS) ---
+      - name: Run Tests (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: powershell
+        run: |
+          cd build
+          $target_config = "${{ matrix.build_type }}"
+          if ("${{ matrix.build_type }}" -eq "ASan") { $target_config = "Debug" }
+          ctest -C $target_config --output-on-failure
+
+  # --- ETAP PRODUKCYJNY DOCKERA ---
+  docker-delivery:
+    needs: build-and-test
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and Push Server Image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./docker/Dockerfile.server
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/rts-server:latest
+            ghcr.io/${{ github.repository }}/rts-server:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
