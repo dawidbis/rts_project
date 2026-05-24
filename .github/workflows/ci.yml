@@ -23,7 +23,7 @@ jobs:
         run: |
           find common server client tests -iname "*.hpp" -o -iname "*.cpp" | xargs clang-format --dry-run --Werror
 
-  # --- ETAP 2: MATRIX BUILD (BEZ CONFLICTÓW W WINDOWS ASAN) ---
+  # --- ETAP 2: MATRIX BUILD (BEZ WINDOWS ASAN) ---
   build-and-test:
     needs: lint
     strategy:
@@ -75,23 +75,24 @@ jobs:
             ${{ matrix.os }}-conan-${{ hashFiles('conanfile.py') }}-
             ${{ matrix.os }}-conan-
 
-      # --- CONAN INSTALL (LINUX - BEZ KLIENTA) ---
+      # --- CONAN INSTALL (LINUX - WY£¥CZONY KLIENT) ---
       - name: Conan Install (Linux)
         if: matrix.os == 'ubuntu-24.04'
         run: |
           CONAN_BT="${{ matrix.build_type }}"
           if [ "${{ matrix.build_type }}" = "ASan" ]; then CONAN_BT="Debug"; fi
-          conan install . --output-folder=build --build=missing -s build_type=$CONAN_BT -o build_client=False
+          conan install . --output-folder=build -s build_type=$CONAN_BT -o build_client=False --build=missing
 
-      # --- CONAN INSTALL (WINDOWS - Z CLIENTEM) ---
+      # --- CONAN INSTALL (WINDOWS - PE£NY BUILD) ---
       - name: Conan Install (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          conan install . --output-folder=build --build=missing -s build_type=${{ matrix.build_type }} -o build_client=True
+          conan install . --output-folder=build -s build_type=${{ matrix.build_type }} -o build_client=True --build=missing
 
       # --- CONFIGURE CMAKE (LINUX) ---
-      # Poprawka: Dynamicznie mapujemy œcie¿kê do toolchaina uwzglêdniaj¹c podkatalogi Debug/Release wygenerowane przez layout Conana.
+      # Zgodnie z cmake_layout, pliki dla generatora Ninja l¹duj¹ w build/build/<build_type>/generators/
+      # Dodatkowo wstrzykujemy flagê RTS_ENABLE_ASAN oraz RTS_ENABLE_UBSAN jeœli matrix to ASan
       - name: Configure CMake (Linux)
         if: matrix.os == 'ubuntu-24.04'
         run: |
@@ -102,28 +103,26 @@ jobs:
             ASAN_FLAG="ON"
           fi
           
-          CONAN_FOLDER=$CMAKE_BT
-          
           cmake -G Ninja -B build -S . \
             -DCMAKE_PROJECT_TOP_LEVEL_INJECTED=OFF \
-            -DCMAKE_TOOLCHAIN_FILE=build/build/$CONAN_FOLDER/generators/conan_toolchain.cmake \
+            -DCMAKE_TOOLCHAIN_FILE=build/build/$CMAKE_BT/generators/conan_toolchain.cmake \
             -DCMAKE_BUILD_TYPE=$CMAKE_BT \
             -DRTS_WARNINGS_AS_ERRORS=ON \
             -DRTS_ENABLE_ASAN=$ASAN_FLAG \
+            -DRTS_ENABLE_UBSAN=$ASAN_FLAG \
             -DRTS_BUILD_CLIENT=OFF \
             -DRTS_BUILD_SERVER=ON \
             -DRTS_BUILD_TESTS=ON
 
       # --- CONFIGURE CMAKE (WINDOWS) ---
-      # Poprawka: Dla Windows MSVC generuje pliki w katalogu opartym na typie budowania (Debug lub Release).
+      # Na Windowsie, MSVC jako generator wielokonfiguracyjny tworzy toolchain bezpoœrednio w build/build/generators/
       - name: Configure CMake (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
           cmake -B build -S . \
             -DCMAKE_PROJECT_TOP_LEVEL_INJECTED=OFF \
-            -DCMAKE_TOOLCHAIN_FILE=build/build/${{ matrix.build_type }}/generators/conan_toolchain.cmake \
-            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DCMAKE_TOOLCHAIN_FILE=build/build/generators/conan_toolchain.cmake \
             -DRTS_WARNINGS_AS_ERRORS=ON \
             -DRTS_ENABLE_ASAN=OFF \
             -DRTS_BUILD_CLIENT=ON \
