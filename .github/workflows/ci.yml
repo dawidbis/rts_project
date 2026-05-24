@@ -38,12 +38,12 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      # --- ZALE¯NOŒCI LINUX ---
+      # --- ZALE¯NOŒCI LINUX (Dodajemy jawnie ninja-build) ---
       - name: Install Linux Dependencies
         if: matrix.os == 'ubuntu-24.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential ccache libgl1-mesa-dev libxrandr-dev libudev-dev
+          sudo apt-get install -y cmake build-essential ccache ninja-build libgl1-mesa-dev libxrandr-dev libudev-dev
 
       # --- PYTHON I CONAN 2.0 ---
       - name: Set up Python
@@ -72,7 +72,7 @@ jobs:
             ${{ matrix.os }}-conan-${{ hashFiles('conanfile.py') }}-
             ${{ matrix.os }}-conan-
 
-      # --- CONAN INSTALL (LINUX - BEZ KLIENTA) ---
+      # --- CONAN INSTALL (LINUX) ---
       - name: Conan Install (Linux)
         if: matrix.os == 'ubuntu-24.04'
         run: |
@@ -80,7 +80,7 @@ jobs:
           if [ "${{ matrix.build_type }}" = "ASan" ]; then CONAN_BT="Debug"; fi
           conan install . --output-folder=build --build=missing -s build_type=$CONAN_BT -o build_client=False
 
-      # --- CONAN INSTALL (WINDOWS - Z CLIENTEM) ---
+      # --- CONAN INSTALL (WINDOWS) ---
       - name: Conan Install (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
@@ -89,24 +89,30 @@ jobs:
           if [ "${{ matrix.build_type }}" = "ASan" ]; then CONAN_BT="Debug"; fi
           conan install . --output-folder=build --build=missing -s build_type=$CONAN_BT -o build_client=True
 
-      # --- CONFIG Z DOK£ADNYM PRESETEM (LINUX) ---
+      # --- CONFIG KLASYCZNY BEZ PRESETÓW (LINUX) ---
+      # Przekazujemy œcie¿kê do pliku conan_toolchain.cmake bazuj¹c na strukturze folderów wygenerowanej przez layout.
       - name: Configure CMake (Linux)
         if: matrix.os == 'ubuntu-24.04'
         run: |
+          CMAKE_BT="${{ matrix.build_type }}"
           ASAN_FLAG="OFF"
-          if [ "${{ matrix.build_type }}" = "ASan" ]; then ASAN_FLAG="ON"; fi
+          if [ "${{ matrix.build_type }}" = "ASan" ]; then 
+            CMAKE_BT="Debug"
+            ASAN_FLAG="ON"
+          fi
           
-          PRESET_NAME="linux-gcc-debug"
-          if [ "${{ matrix.build_type }}" = "Release" ]; then PRESET_NAME="linux-gcc-release"; fi
-          
-          cmake --preset $PRESET_NAME \
+          # Szukamy pliku toolchain w podkatalogu struktury layoutu Conana
+          cmake -G Ninja -B build -S . \
+            -DCMAKE_PROJECT_TOP_LEVEL_INJECTED=OFF \
+            -DCMAKE_TOOLCHAIN_FILE=build/build/generators/conan_toolchain.cmake \
+            -DCMAKE_BUILD_TYPE=$CMAKE_BT \
             -DRTS_WARNINGS_AS_ERRORS=ON \
             -DRTS_ENABLE_ASAN=$ASAN_FLAG \
             -DRTS_BUILD_CLIENT=OFF \
             -DRTS_BUILD_SERVER=ON \
             -DRTS_BUILD_TESTS=ON
 
-      # --- CONFIG KLASYCZNY PRZEZ TOOLCHAIN DLA UNIKNIÊCIA PROBLEMÓW Z NAZWAMI (WINDOWS) ---
+      # --- CONFIG KLASYCZNY BEZ PRESETÓW (WINDOWS) ---
       - name: Configure CMake (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
@@ -132,11 +138,9 @@ jobs:
       - name: Build Project (Linux)
         if: matrix.os == 'ubuntu-24.04'
         run: |
-          PRESET_NAME="linux-gcc-debug"
-          if [ "${{ matrix.build_type }}" = "Release" ]; then PRESET_NAME="linux-gcc-release"; fi
-          cmake --build --preset $PRESET_NAME --parallel 4
+          cmake --build build --parallel 4
 
-      # --- BUILD PROJEKTU CLASYCZNY (WINDOWS) ---
+      # --- BUILD PROJEKTU (WINDOWS) ---
       - name: Build Project (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
