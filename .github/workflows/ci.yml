@@ -51,23 +51,23 @@ jobs:
         with:
           python-version: '3.x'
 
-      - name: Install Conan
+      # Wykrywamy profil, a nastêpnie ordynarnie dopisujemy 'compiler.cppstd=20' na koniec pliku.
+      # Zastêpuje to jakiekolwiek wadliwe automatyczne wykrywanie standardu przez Conana.
+      - name: Install Conan & Enforce C++20
+        shell: bash
         run: |
           pip install "conan>=2.0"
           conan profile detect --force
-
-      # --- POPRAWKA PROFILU DLA LINUXA (C++20 dla libpqxx) ---
-      - name: Patch Conan Profile (Linux)
-        if: matrix.os == 'ubuntu-24.04'
-        run: |
-          conan profile patch-setting settings.compiler.cppstd=20 default
-
-      # --- POPRAWKA PROFILU DLA WINDOWSA (C++20 dla libpqxx) ---
-      - name: Patch Conan Profile (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: powershell
-        run: |
-          conan profile patch-setting settings.compiler.cppstd=20 default
+          
+          if [ "${{ matrix.os }}" = "ubuntu-24.04" ]; then
+            echo "compiler.cppstd=20" >> ~/.conan2/profiles/default
+            echo "--- ZMODYFIKOWANY PROFIL LINUX ---"
+            cat ~/.conan2/profiles/default
+          else
+            echo "compiler.cppstd=20" >> ~/.conan2/profiles/default
+            echo "--- ZMODYFIKOWANY PROFIL WINDOWS ---"
+            cat ~/.conan2/profiles/default
+          fi
 
       # --- CACHE DLA ZALE¯NOŒCI CONANA ---
       - name: Conan Cache
@@ -92,11 +92,11 @@ jobs:
       # --- CONAN INSTALL (WINDOWS - Z CLIENTEM) ---
       - name: Conan Install (Windows)
         if: matrix.os == 'windows-latest'
-        shell: powershell
+        shell: bash
         run: |
-          $conan_bt = "${{ matrix.build_type }}"
-          if ("${{ matrix.build_type }}" -eq "ASan") { $conan_bt = "Debug" }
-          conan install . --output-folder=build --build=missing -s build_type=$conan_bt -o build_client=True
+          CONAN_BT="${{ matrix.build_type }}"
+          if [ "${{ matrix.build_type }}" = "ASan" ]; then CONAN_BT="Debug"; fi
+          conan install . --output-folder=build --build=missing -s build_type=$CONAN_BT -o build_client=True
 
       # --- CONFIG Z PRESETEM (LINUX) ---
       - name: Configure CMake (Linux)
@@ -118,16 +118,16 @@ jobs:
       # --- CONFIG Z PRESETEM (WINDOWS) ---
       - name: Configure CMake (Windows)
         if: matrix.os == 'windows-latest'
-        shell: powershell
+        shell: bash
         run: |
-          $asan_flag = "OFF"
-          if ("${{ matrix.build_type }}" -eq "ASan") { $asan_flag = "ON" }
+          ASAN_FLAG="OFF"
+          if [ "${{ matrix.build_type }}" = "ASan" ]; then ASAN_FLAG="ON"; fi
           
-          cmake --preset conan-default `
-            -DRTS_WARNINGS_AS_ERRORS=ON `
-            -DRTS_ENABLE_ASAN=$asan_flag `
-            -DRTS_BUILD_CLIENT=ON `
-            -DRTS_BUILD_SERVER=ON `
+          cmake --preset conan-default \
+            -DRTS_WARNINGS_AS_ERRORS=ON \
+            -DRTS_ENABLE_ASAN=$ASAN_FLAG \
+            -DRTS_BUILD_CLIENT=ON \
+            -DRTS_BUILD_SERVER=ON \
             -DRTS_BUILD_TESTS=ON
 
       # --- BUILD PROJEKTU (LINUX) ---
@@ -141,11 +141,11 @@ jobs:
       # --- BUILD PROJEKTU (WINDOWS) ---
       - name: Build Project (Windows)
         if: matrix.os == 'windows-latest'
-        shell: powershell
+        shell: bash
         run: |
-          $target_config = "${{ matrix.build_type }}"
-          if ("${{ matrix.build_type }}" -eq "ASan") { $target_config = "Debug" }
-          cmake --build --preset conan-default --config $target_config --parallel 4
+          TARGET_CONFIG="${{ matrix.build_type }}"
+          if [ "${{ matrix.build_type }}" = "ASan" ]; then TARGET_CONFIG="Debug"; fi
+          cmake --build --preset conan-default --config $TARGET_CONFIG --parallel 4
 
       # --- TESTY (LINUX) ---
       - name: Run Tests (Linux)
@@ -157,12 +157,12 @@ jobs:
       # --- TESTY (WINDOWS) ---
       - name: Run Tests (Windows)
         if: matrix.os == 'windows-latest'
-        shell: powershell
+        shell: bash
         run: |
           cd build
-          $target_config = "${{ matrix.build_type }}"
-          if ("${{ matrix.build_type }}" -eq "ASan") { $target_config = "Debug" }
-          ctest -C $target_config --output-on-failure
+          TARGET_CONFIG="${{ matrix.build_type }}"
+          if [ "${{ matrix.build_type }}" = "ASan" ]; then TARGET_CONFIG="Debug"; fi
+          ctest -C $TARGET_CONFIG --output-on-failure
 
   # --- ETAP PRODUKCYJNY DOCKERA ---
   docker-delivery:
