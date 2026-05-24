@@ -7,6 +7,7 @@ on:
     branches: [ main, master ]
 
 jobs:
+  # --- ETAP 1: SZYBKA ANALIZA STATYCZNA ---
   lint:
     runs-on: ubuntu-24.04
     steps:
@@ -22,6 +23,7 @@ jobs:
         run: |
           find common server client tests -iname "*.hpp" -o -iname "*.cpp" | xargs clang-format --dry-run --Werror
 
+  # --- ETAP 2: MATRIX BUILD (WINDOWS & LINUX, 3 CONFIGURACJE) ---
   build-and-test:
     needs: lint
     strategy:
@@ -36,12 +38,14 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # --- ZALE¯NOŒCI LINUX ---
       - name: Install Linux Dependencies
         if: matrix.os == 'ubuntu-24.04'
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake build-essential ccache libgl1-mesa-dev libxrandr-dev libudev-dev
 
+      # --- PYTHON I CONAN 2.0 ---
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -51,7 +55,12 @@ jobs:
         run: |
           pip install "conan>=2.0"
           conan profile detect --force
+          
+          # POPRAWKA IN¯YNIERSKA: Wymuszamy standard C++20 w domyœlnym profilu Conana.
+          # Zapobiega to odrzucaniu nowoczesnych bibliotek (np. libpqxx) przez kompilator GCC na Linuxie.
+          conan profile patch-setting settings.compiler.cppstd=20 default
 
+      # --- CACHE DLA ZALE¯NOŒCI CONANA ---
       - name: Conan Cache
         uses: actions/cache@v4
         with:
@@ -63,6 +72,7 @@ jobs:
             ${{ matrix.os }}-conan-${{ hashFiles('conanfile.py') }}-
             ${{ matrix.os }}-conan-
 
+      # --- INSTALACJA ZALE¯NOŒCI PRZEZ CONANA ---
       - name: Conan Install
         shell: bash
         run: |
@@ -73,17 +83,16 @@ jobs:
           fi
           
           # Na Linux CI nie budujemy klienta (unikamy problemów z brakiem monitora/X11 dla SFML)
-          BUILD_CLIENT_FLAG="ON"
+          BUILD_CLIENT_FLAG="True"
           if [ "${{ matrix.os }}" = "ubuntu-24.04" ]; then
-            BUILD_CLIENT_FLAG="OFF"
+            BUILD_CLIENT_FLAG="False"
           fi
           
-          conan install . --output-folder=build --build=missing -s build_type=$CONAN_BT
+          # POPRAWKA IN¯YNIERSKA: Jawnie przekazujemy opcjê build_client do conanfile.py,
+          # aby Conan w œrodowisku bezg³owym (headless Linux) nie pobiera³ paczek graficznych.
+          conan install . --output-folder=build --build=missing -s build_type=$CONAN_BT -o build_client=$BUILD_CLIENT_FLAG
 
-      # Do konfiguracji u¿ywamy czystego CLI, wskazuj¹c œcie¿kê do wygenerowanego przez Conan narzêdzia (toolchain)
-      # Unikamy problemów z niespójnymi nazwami presetów na ró¿nych platformach
-      # Zwróæ uwagê na wstrzykiwanie Twoich opcji RTS_*
-      # Wymuszamy wy³¹czenie budowania Klienta na maszynie Linux CI (RTS_BUILD_CLIENT=OFF)
+      # --- KONFIGURACJA CMAKE ---
       - name: Configure CMake
         shell: bash
         run: |
@@ -110,6 +119,7 @@ jobs:
             -DRTS_BUILD_SERVER=ON \
             -DRTS_BUILD_TESTS=ON
 
+      # --- KOMPILACJA PROJEKTU ---
       - name: Build Project
         shell: bash
         run: |
@@ -119,6 +129,7 @@ jobs:
           fi
           cmake --build build --config $TARGET_CONFIG --parallel $(nproc 2>/dev/null || echo 4)
 
+      # --- TESTY JEDNOSTKOWE (CATCH2) ---
       - name: Run Tests (Catch2 via CTest)
         shell: bash
         run: |
