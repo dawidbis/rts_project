@@ -23,16 +23,17 @@ WORKDIR /build
 # Copy entire project
 COPY . .
 
-# Configure Conan profile for Release build
-RUN conan profile detect --force
+# Configure Conan profile for Release build and set C++20 standard
+RUN conan profile detect --force && \
+    echo "compiler.cppstd=20" >> ~/.conan2/profiles/default
 
 # Install dependencies (Release, no client, no ASan for prod)
 RUN conan install . \
     --output-folder=build \
     -s build_type=Release \
-    -o build_server=True \
-    -o build_client=False \
-    -o build_tests=False \
+    -o &:build_server=True \
+    -o &:build_client=False \
+    -o &:build_tests=False \
     --build=missing
 
 # Configure CMake
@@ -49,12 +50,13 @@ RUN cmake -G Ninja \
 # Build project
 RUN cmake --build build --parallel $(nproc)
 
+
 # --- STAGE 2: RUNTIME ---
 FROM ubuntu:24.04 AS runtime
 
-# Install only runtime dependencies (no build tools, no dev headers)
+# Install only runtime dependencies and netcat for healthcheck
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libstdc++6 libgcc-s1 ca-certificates \
+    libstdc++6 libgcc-s1 ca-certificates netcat-openbsd \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -68,9 +70,9 @@ RUN useradd -m -s /sbin/nologin rts_server && \
 
 USER rts_server
 
-# Health check
+# Health check to ensure the server is listening on port 8080
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD [ -f /app/rts-server ] || exit 1
+    CMD nc -z localhost 8080 || exit 1
 
 EXPOSE 8080
 
