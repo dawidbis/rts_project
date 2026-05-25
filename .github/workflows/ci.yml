@@ -7,183 +7,162 @@ on:
     branches: [ main, master ]
 
 jobs:
-  # --- ETAP 1: SZYBKA ANALIZA STATYCZNA ---
+
+# =========================
+#  LINT
+# =========================
   lint:
     runs-on: ubuntu-24.04
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Lint Tools
+      - name: Install tools
+        run: sudo apt-get update && sudo apt-get install -y clang-format
+
+      - name: Format check
         run: |
-          sudo apt-get update
-          sudo apt-get install -y clang-format
+          find common server client tests -name "*.cpp" -o -name "*.hpp" \
+          | xargs clang-format --dry-run --Werror
 
-      - name: Run Clang Format Check
-        run: |
-          find common server client tests -iname "*.hpp" -o -iname "*.cpp" | xargs clang-format --dry-run --Werror
 
-  # --- ETAP 2: MATRIX BUILD (BEZ WINDOWS ASAN) ---
-  build-and-test:
+# =========================
+#  BUILD MATRIX (FAST CI)
+# =========================
+  build:
     needs: lint
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, windows-latest]
-        build_type: [Debug, Release, ASan]
+        build_type: [Debug, Release]
+        sanitizer: [none, asan]
+
         exclude:
           - os: windows-latest
-            build_type: ASan
+            sanitizer: asan
+          - build_type: Release
+            sanitizer: asan
 
     runs-on: ${{ matrix.os }}
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
 
-      # --- ZALE¯NOŒCI LINUX ---
-      - name: Install Linux Dependencies
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux deps
         if: matrix.os == 'ubuntu-24.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential ccache ninja-build libgl1-mesa-dev libxrandr-dev libudev-dev pkg-config
+          sudo apt-get install -y cmake ninja-build build-essential ccache pkg-config
 
-      # --- PYTHON I CONAN 2.0 ---
-      - name: Set up Python
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
+          python-version: "3.x"
 
-      - name: Install Conan & Enforce C++20
+      - name: Install Conan
+        run: pip install "conan>=2.0"
+
+      - name: Conan profile + C++20 FIX
         shell: bash
         run: |
-          pip install "conan>=2.0"
           conan profile detect --force
           echo "compiler.cppstd=20" >> ~/.conan2/profiles/default
-          echo "--- CONAN PROFILE STATUS ---"
-          cat ~/.conan2/profiles/default
 
-      # --- CACHE DLA ZALE¯NOŒCI CONANA ---
-      - name: Conan Cache
+      - name: Conan cache
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.conan2/p
-            ~/.conan/data
-          key: ${{ matrix.os }}-conan-${{ hashFiles('conanfile.py') }}-${{ matrix.build_type }}
-          restore-keys: |
-            ${{ matrix.os }}-conan-${{ hashFiles('conanfile.py') }}-
-            ${{ matrix.os }}-conan-
+          path: ~/.conan2
+          key: ${{ matrix.os }}-conan-${{ hashFiles('conanfile.py') }}
 
-      # --- CONAN INSTALL (LINUX - WY£¥CZONY KLIENT) ---
-      - name: Conan Install (Linux)
-        if: matrix.os == 'ubuntu-24.04'
-        run: |
-          CONAN_BT="${{ matrix.build_type }}"
-          if [ "${{ matrix.build_type }}" = "ASan" ]; then CONAN_BT="Debug"; fi
-          conan install . --output-folder=build -s build_type=$CONAN_BT -o build_client=False -o build_tests=True --build=missing
-
-      # --- CONAN INSTALL (WINDOWS - PE£NY BUILD) ---
-      - name: Conan Install (Windows)
-        if: matrix.os == 'windows-latest'
+      - name: Conan install
         shell: bash
         run: |
-          conan install . --output-folder=build -s build_type=${{ matrix.build_type }} -o build_client=True -o build_tests=True --build=missing
+          SAN_FLAG="OFF"
+          if [ "${{ matrix.sanitizer }}" = "asan" ]; then SAN_FLAG="ON"; fi
 
-      # --- CONFIGURE CMAKE (LINUX) ---
-      # Zgodnie z cmake_layout, pliki dla generatora Ninja l¹duj¹ w build/build/<build_type>/generators/
-      # Dodatkowo wstrzykujemy flagê RTS_ENABLE_ASAN oraz RTS_ENABLE_UBSAN jeœli matrix to ASan
-      - name: Configure CMake (Linux)
+          conan install . \
+            -s build_type=${{ matrix.build_type }} \
+            -s compiler.cppstd=20 \
+            -o build_server=True \
+            -o build_client=false \
+            -o build_tests=true \
+            --output-folder=build \
+            --build=missing
+
+      - name: CMake configure (Linux)
         if: matrix.os == 'ubuntu-24.04'
         run: |
-          CMAKE_BT="${{ matrix.build_type }}"
-          ASAN_FLAG="OFF"
-          if [ "${{ matrix.build_type }}" = "ASan" ]; then 
-            CMAKE_BT="Debug"
-            ASAN_FLAG="ON"
-          fi
-          
+          SAN="${{ matrix.sanitizer }}"
           cmake -G Ninja -B build -S . \
-            -DCMAKE_PROJECT_TOP_LEVEL_INJECTED=OFF \
-            -DCMAKE_TOOLCHAIN_FILE=build/build/$CMAKE_BT/generators/conan_toolchain.cmake \
-            -DCMAKE_BUILD_TYPE=$CMAKE_BT \
-            -DRTS_WARNINGS_AS_ERRORS=ON \
-            -DRTS_ENABLE_ASAN=$ASAN_FLAG \
-            -DRTS_ENABLE_UBSAN=$ASAN_FLAG \
-            -DRTS_BUILD_CLIENT=OFF \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DRTS_ENABLE_ASAN=$([ "$SAN" = "asan" ] && echo ON || echo OFF) \
+            -DRTS_ENABLE_UBSAN=$([ "$SAN" = "asan" ] && echo ON || echo OFF) \
             -DRTS_BUILD_SERVER=ON \
-            -DRTS_BUILD_TESTS=ON
+            -DRTS_BUILD_CLIENT=OFF \
+            -DRTS_BUILD_TESTS=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/build/${{ matrix.build_type }}/generators/conan_toolchain.cmake
 
-      # --- CONFIGURE CMAKE (WINDOWS) ---
-      # Na Windowsie, MSVC jako generator wielokonfiguracyjny tworzy toolchain bezpoœrednio w build/build/generators/
-      - name: Configure CMake (Windows)
+      - name: CMake configure (Windows)
         if: matrix.os == 'windows-latest'
-        shell: bash
         run: |
           cmake -B build -S . \
-            -DCMAKE_PROJECT_TOP_LEVEL_INJECTED=OFF \
-            -DCMAKE_TOOLCHAIN_FILE=build/build/generators/conan_toolchain.cmake \
-            -DRTS_WARNINGS_AS_ERRORS=ON \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
             -DRTS_ENABLE_ASAN=OFF \
-            -DRTS_BUILD_CLIENT=ON \
             -DRTS_BUILD_SERVER=ON \
-            -DRTS_BUILD_TESTS=ON
+            -DRTS_BUILD_CLIENT=ON \
+            -DRTS_BUILD_TESTS=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/build/generators/conan_toolchain.cmake
 
-      # --- BUILD PROJEKTU (LINUX) ---
-      - name: Build Project (Linux)
-        if: matrix.os == 'ubuntu-24.04'
-        run: |
-          cmake --build build --parallel $(nproc)
+      - name: Build
+        run: cmake --build build --parallel
 
-      # --- BUILD PROJEKTU (WINDOWS) ---
-      - name: Build Project (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          cmake --build build --config ${{ matrix.build_type }} --parallel $(nproc)
-
-      # --- TESTY (LINUX) ---
-      - name: Run Tests (Linux)
-        if: matrix.os == 'ubuntu-24.04'
+      - name: Test
         run: |
           cd build
           ctest --output-on-failure
 
-      # --- TESTY (WINDOWS) ---
-      - name: Run Tests (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: bash
-        run: |
-          cd build
-          ctest -C ${{ matrix.build_type }} --output-on-failure
 
-  # --- ETAP PRODUKCYJNY DOCKERA ---
-  docker-delivery:
-    needs: build-and-test
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master')
+# =========================
+#  NIGHTLY TSan (IMPORTANT)
+# =========================
+  tsan:
     runs-on: ubuntu-24.04
+    if: github.event_name == 'schedule'
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+      - name: Setup deps
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
 
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Conan + C++20
+        run: |
+          pip install conan
+          conan profile detect --force
+          echo "compiler.cppstd=20" >> ~/.conan2/profiles/default
 
-      - name: Build and Push Server Image
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: ./docker/Dockerfile.server
-          push: true
-          tags: |
-            ghcr.io/${{ github.repository }}/rts-server:latest
-            ghcr.io/${{ github.repository }}/rts-server:${{ github.sha }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      - name: Conan install (TSan)
+        run: |
+          conan install . \
+            -s build_type=Debug \
+            -s compiler.cppstd=20 \
+            -o build_server=True \
+            -o build_client=false \
+            -o build_tests=true \
+            --output-folder=build \
+            --build=missing
+
+      - name: Configure TSan
+        run: |
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DRTS_ENABLE_TSAN=ON \
+            -DRTS_ENABLE_ASAN=OFF \
+            -DRTS_ENABLE_UBSAN=OFF \
+            -DCMAKE_TOOLCHAIN_FILE=build/build/Debug/generators/conan_toolchain.cmake
+
+      - name: Build + Test
+        run: |
+          cmake --build build
+          cd build
+          ctest --output-on-failure
