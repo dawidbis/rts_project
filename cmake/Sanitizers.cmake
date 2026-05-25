@@ -34,9 +34,7 @@ function(rts_enable_sanitizers target)
             -fsanitize=${sanitizer_flags}
         )
     elseif(MSVC AND RTS_ENABLE_ASAN)
-        # MSVC supports /fsanitize=address since VS 2019 16.9
         target_compile_options(${target} INTERFACE /fsanitize=address)
-        # Note: UBSan/TSan are NOT supported on MSVC
     else()
         message(WARNING "Sanitizers requested but compiler does not support them; skipping")
     endif()

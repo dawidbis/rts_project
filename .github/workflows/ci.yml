@@ -62,8 +62,6 @@ jobs:
       - name: Install Conan
         run: pip install "conan>=2.0"
 
-      # Usuniêto niebezpieczne modyfikowanie pliku profilu, które powodowa³o b³¹d z katalogiem w bashu.
-      # Standard C++20 narzucamy bezpoœrednio w komendzie conan install.
       - name: Conan profile
         shell: bash
         run: conan profile detect --force
@@ -80,11 +78,9 @@ jobs:
           SAN_FLAG="OFF"
           if [ "${{ matrix.sanitizer }}" = "asan" ]; then SAN_FLAG="ON"; fi
 
-          # Poprawka logiki: Klient musi byæ pobrany przez Conana na Windowsie, by CMake znalaz³ SFML!
           BUILD_CLIENT="False"
           if [ "${{ matrix.os }}" = "windows-latest" ]; then BUILD_CLIENT="True"; fi
 
-          # Zastosowano sk³adniê "*:Opcja", by Conan usun¹³ warningi, a Bash nie traktowa³ "&" jako procesu w tle.
           conan install . \
             -s build_type=${{ matrix.build_type }} \
             -s compiler.cppstd=20 \
@@ -109,6 +105,7 @@ jobs:
 
       - name: CMake configure (Windows)
         if: matrix.os == 'windows-latest'
+        shell: bash
         run: |
           cmake -B build -S . \
             -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
