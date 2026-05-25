@@ -67,3 +67,126 @@ jobs:
         run: |
           conan profile detect --force
           echo "compiler.cppstd=20" >> ~/.conan2/profiles/default
+
+      - name: Conan cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.conan2
+          key: ${{ matrix.os }}-conan-${{ hashFiles('conanfile.py') }}
+
+      - name: Conan install
+        shell: bash
+        run: |
+          SAN_FLAG="OFF"
+          if [ "${{ matrix.sanitizer }}" = "asan" ]; then SAN_FLAG="ON"; fi
+
+          conan install . \
+            -s build_type=${{ matrix.build_type }} \
+            -s compiler.cppstd=20 \
+            -o &:build_server=True \
+            -o &:build_client=False \
+            -o &:build_tests=True \
+            --output-folder=build \
+            --build=missing
+
+      - name: CMake configure (Linux)
+        if: matrix.os == 'ubuntu-24.04'
+        run: |
+          SAN="${{ matrix.sanitizer }}"
+          cmake -G Ninja -B build -S . \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DRTS_ENABLE_ASAN=$([ "$SAN" = "asan" ] && echo ON || echo OFF) \
+            -DRTS_ENABLE_UBSAN=$([ "$SAN" = "asan" ] && echo ON || echo OFF) \
+            -DRTS_BUILD_SERVER=ON \
+            -DRTS_BUILD_CLIENT=OFF \
+            -DRTS_BUILD_TESTS=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/build/${{ matrix.build_type }}/generators/conan_toolchain.cmake
+
+      - name: CMake configure (Windows)
+        if: matrix.os == 'windows-latest'
+        run: |
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+            -DRTS_ENABLE_ASAN=OFF \
+            -DRTS_BUILD_SERVER=ON \
+            -DRTS_BUILD_CLIENT=ON \
+            -DRTS_BUILD_TESTS=ON \
+            -DCMAKE_TOOLCHAIN_FILE=build/build/generators/conan_toolchain.cmake
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: |
+          cd build
+          ctest --output-on-failure
+
+
+# =========================
+#  NIGHTLY TSan (IMPORTANT)
+# =========================
+  tsan:
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'schedule'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup deps
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+
+      - name: Conan + C++20
+        run: |
+          pip install conan
+          conan profile detect --force
+          echo "compiler.cppstd=20" >> ~/.conan2/profiles/default
+
+      - name: Conan install (TSan)
+        run: |
+          conan install . \
+            -s build_type=Debug \
+            -s compiler.cppstd=20 \
+            -o &:build_server=True \
+            -o &:build_client=False \
+            -o &:build_tests=True \
+            --output-folder=build \
+            --build=missing
+
+      - name: Configure TSan
+        run: |
+          cmake -B build -S . \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DRTS_ENABLE_TSAN=ON \
+            -DRTS_ENABLE_ASAN=OFF \
+            -DRTS_ENABLE_UBSAN=OFF \
+            -DCMAKE_TOOLCHAIN_FILE=build/build/Debug/generators/conan_toolchain.cmake
+
+      - name: Build + Test
+        run: |
+          cmake --build build
+          cd build
+          ctest --output-on-failure
+
+
+# =========================
+#  DOCKER BUILD
+# =========================
+  docker:
+    needs: lint
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build server image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: ./Dockerfile.server
+          push: false  # Ustaw na 'true', jeœli w przysz³oœci dodasz logowanie do np. ghcr.io
+          tags: rts-server:latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
