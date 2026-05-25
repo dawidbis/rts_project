@@ -1,24 +1,77 @@
-# docker/Dockerfile.server
-FROM ubuntu:24.04
+# =============================================================================
+#  Multi-stage Docker build for RTS Server
+#  Stage 1: Builder - compile & link
+#  Stage 2: Runtime - lean image with only runtime artifacts
+# =============================================================================
 
-RUN apt-get update && apt-get install -y \
-    cmake build-essential ninja-build \
-    libboost-all-dev libenet-dev libspdlog-dev \
-    ca-certificates \
+# --- STAGE 1: BUILDER ---
+FROM ubuntu:24.04 AS builder
+
+# Install build essentials and dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential cmake ninja-build \
+    python3 python3-pip git \
+    pkg-config ca-certificates \
+    libgl1-mesa-dev libxrandr-dev libudev-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Conan
+RUN pip install --no-cache-dir "conan>=2.0"
+
+WORKDIR /build
+
+# Copy entire project
+COPY . .
+
+# Configure Conan profile for Release build
+RUN conan profile detect --force
+
+# Install dependencies (Release, no client, no ASan for prod)
+RUN conan install . \
+    --output-folder=build \
+    -s build_type=Release \
+    -o build_server=True \
+    -o build_client=False \
+    -o build_tests=False \
+    --build=missing
+
+# Configure CMake
+RUN cmake -G Ninja \
+    -B build \
+    -S . \
+    -DCMAKE_TOOLCHAIN_FILE=build/build/Release/generators/conan_toolchain.cmake \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DRTS_BUILD_SERVER=ON \
+    -DRTS_BUILD_CLIENT=OFF \
+    -DRTS_BUILD_TESTS=OFF \
+    -DRTS_ENABLE_ASAN=OFF
+
+# Build project
+RUN cmake --build build --parallel $(nproc)
+
+# --- STAGE 2: RUNTIME ---
+FROM ubuntu:24.04 AS runtime
+
+# Install only runtime dependencies (no build tools, no dev headers)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libstdc++6 libgcc-s1 ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY . .
+# Copy only the built binary from builder
+COPY --from=builder /build/build/bin/rts-server .
 
-RUN mkdir -p build && \
-    cmake -G Ninja -B build -S . \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DRTS_BUILD_SERVER=ON \
-    -DRTS_BUILD_CLIENT=OFF \
-    -DRTS_BUILD_TESTS=OFF && \
-    cmake --build build --parallel 4
+# Create non-root user for security
+RUN useradd -m -s /sbin/nologin rts_server && \
+    chown -R rts_server:rts_server /app
+
+USER rts_server
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD [ -f /app/rts-server ] || exit 1
 
 EXPOSE 8080
 
-CMD ["./build/bin/rts-server"]
+ENTRYPOINT ["/app/rts-server"]

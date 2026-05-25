@@ -46,7 +46,7 @@ jobs:
         if: matrix.os == 'ubuntu-24.04'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake build-essential ccache ninja-build libgl1-mesa-dev libxrandr-dev libudev-dev
+          sudo apt-get install -y cmake build-essential ccache ninja-build libgl1-mesa-dev libxrandr-dev libudev-dev pkg-config
 
       # --- PYTHON I CONAN 2.0 ---
       - name: Set up Python
@@ -81,14 +81,14 @@ jobs:
         run: |
           CONAN_BT="${{ matrix.build_type }}"
           if [ "${{ matrix.build_type }}" = "ASan" ]; then CONAN_BT="Debug"; fi
-          conan install . --output-folder=build -s build_type=$CONAN_BT -o build_client=False --build=missing
+          conan install . --output-folder=build -s build_type=$CONAN_BT -o build_client=False -o build_tests=True --build=missing
 
       # --- CONAN INSTALL (WINDOWS - PE£NY BUILD) ---
       - name: Conan Install (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          conan install . --output-folder=build -s build_type=${{ matrix.build_type }} -o build_client=True --build=missing
+          conan install . --output-folder=build -s build_type=${{ matrix.build_type }} -o build_client=True -o build_tests=True --build=missing
 
       # --- CONFIGURE CMAKE (LINUX) ---
       # Zgodnie z cmake_layout, pliki dla generatora Ninja l¹duj¹ w build/build/<build_type>/generators/
@@ -133,14 +133,14 @@ jobs:
       - name: Build Project (Linux)
         if: matrix.os == 'ubuntu-24.04'
         run: |
-          cmake --build build --parallel 4
+          cmake --build build --parallel $(nproc)
 
       # --- BUILD PROJEKTU (WINDOWS) ---
       - name: Build Project (Windows)
         if: matrix.os == 'windows-latest'
         shell: bash
         run: |
-          cmake --build build --config ${{ matrix.build_type }} --parallel 4
+          cmake --build build --config ${{ matrix.build_type }} --parallel $(nproc)
 
       # --- TESTY (LINUX) ---
       - name: Run Tests (Linux)
