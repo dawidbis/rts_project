@@ -66,4 +66,4 @@ jobs:
         shell: bash
         run: |
           conan profile detect --force
-          echo "compiler.cppstd=20" >> ~/.
+          echo "compiler.cppstd=20" >> ~/.conan2/profiles/default
