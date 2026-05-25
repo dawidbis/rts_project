@@ -16,7 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Conan
-RUN pip install --no-cache-dir "conan>=2.0"
+RUN pip install --no-cache-dir --break-system-packages "conan>=2.0"
 
 WORKDIR /build
 
