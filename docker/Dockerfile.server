@@ -1,0 +1,24 @@
+# docker/Dockerfile.server
+FROM ubuntu:24.04
+
+RUN apt-get update && apt-get install -y \
+    cmake build-essential ninja-build \
+    libboost-all-dev libenet-dev libspdlog-dev \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY . .
+
+RUN mkdir -p build && \
+    cmake -G Ninja -B build -S . \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DRTS_BUILD_SERVER=ON \
+    -DRTS_BUILD_CLIENT=OFF \
+    -DRTS_BUILD_TESTS=OFF && \
+    cmake --build build --parallel 4
+
+EXPOSE 8080
+
+CMD ["./build/bin/rts-server"]
