@@ -19,11 +19,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Export compile_commands.json for clang-tidy / IDE integration [cite: 52]
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
  
-# Default to Release if user did not specify
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
+# Wymuszenie JEDNEJ konfiguracji, aby MSBuild nie szuka³ paczek z Conana dla innych trybów
+if(NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release" CACHE STRING "Build type" FORCE)
-    set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS
-        "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
+endif()
+
+get_property(IS_MULTI_CONFIG GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(IS_MULTI_CONFIG)
+    set(CMAKE_CONFIGURATION_TYPES "${CMAKE_BUILD_TYPE}" CACHE STRING "Ograniczenie dla MSBuild" FORCE)
 endif()
  
 # Place all built artifacts in predictable locations
@@ -68,7 +71,7 @@ if(RTS_ENABLE_CLANG_TIDY)
 endif()
  
 # -----------------------------------------------------------------------------
-#  Third-party dependencies (resolved by Conan) [cite: 22]
+#  Third-party dependencies (resolved by Conan)
 # -----------------------------------------------------------------------------
 # Wspólne zale¿noœci rdzenia silnika (widoczne dla wszystkich podprojektów)
 find_package(EnTT        CONFIG REQUIRED) 

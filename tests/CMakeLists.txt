@@ -13,6 +13,7 @@ function(rts_add_test name)
     add_executable(${name} ${T_SOURCES})
     target_link_libraries(${name}
         PRIVATE
+            rts::common
             Catch2::Catch2WithMain
             rts_project_warnings
             ${T_LINKS}

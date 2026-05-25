@@ -24,7 +24,7 @@ class RtsEngineConan(ConanFile):
         self.requires("entt/3.13.2")
         self.requires("boost/1.85.0")
         self.requires("enet/1.3.17")
-        self.requires("flatbuffers/24.3.25")
+        self.requires("flatbuffers/25.9.23")
         self.requires("spdlog/1.14.1")
 
         # 2. Server-specific dependencies

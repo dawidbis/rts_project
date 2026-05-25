@@ -1,0 +1,107 @@
+namespace rts.network;
+
+// ==========================================
+// NOWE KOMENDY (Polimorficzne)
+// ==========================================
+
+table AttackCmd { 
+    target_player_id: ushort; 
+    percentage: ubyte; 
+}
+
+table RetreatCmd { 
+    target_player_id: ushort; 
+}
+
+table CounterAttackCmd { 
+    target_player_id: ushort; 
+}
+
+table SetRatioCmd { 
+    ratio: ubyte; 
+}
+
+table BuyUrbanizationCmd { 
+    amount: ubyte; 
+}
+
+union CommandPayload {
+    AttackCmd,
+    RetreatCmd,
+    CounterAttackCmd,
+    SetRatioCmd,
+    BuyUrbanizationCmd
+}
+
+table PlayerCommand {
+    player_id: ushort;
+    payload: CommandPayload;
+}
+
+// ==========================================
+// WSPÓLNE STRUKTURY DANYCH
+// ==========================================
+
+struct RLERun {
+  owner_id: ushort;
+  count: ushort; 
+}
+
+table ChunkDelta {
+  chunk_id: ushort;
+  runs: [RLERun]; 
+}
+
+// ==========================================
+// KOMUNIKACJA UDP (ENet)
+// ==========================================
+
+table TickDelta {
+  tick_number: uint;
+  chunks: [ChunkDelta]; 
+}
+
+table UdpStatePacket {
+  current_tick: uint;
+  history_depth: ubyte; 
+  deltas: [TickDelta];  
+}
+
+// ==========================================
+// KOMUNIKACJA TCP (Boost.Asio)
+// ==========================================
+
+table HandshakeRequest {
+  protocol_version: uint;
+  auth_token: string; 
+}
+
+table HandshakeResponse {
+  accepted: bool;
+  assigned_player_id: ushort;
+  session_uuid: string; 
+}
+
+table NackRequest {
+  last_known_tick: uint;
+}
+
+table KeyframeSnapshot {
+  tick_number: uint;
+  all_chunks: [ChunkDelta]; 
+}
+
+union TcpPayload {
+  PlayerCommand,
+  HandshakeRequest,
+  HandshakeResponse,
+  NackRequest,
+  KeyframeSnapshot
+}
+
+table TcpMessage {
+  payload: TcpPayload;
+}
+
+root_type TcpMessage;
+root_type UdpStatePacket;
