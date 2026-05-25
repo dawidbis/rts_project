@@ -28,12 +28,13 @@ RUN conan profile detect --force && \
     echo "compiler.cppstd=20" >> ~/.conan2/profiles/default
 
 # Install dependencies (Release, no client, no ASan for prod)
+# Zastosowano sk³adniê "*:", aby uchroniæ pow³okê Bash przed traktowaniem opcji jako procesów w tle
 RUN conan install . \
     --output-folder=build \
     -s build_type=Release \
-    -o &:build_server=True \
-    -o &:build_client=False \
-    -o &:build_tests=False \
+    -o "*:build_server=True" \
+    -o "*:build_client=False" \
+    -o "*:build_tests=False" \
     --build=missing
 
 # Configure CMake
